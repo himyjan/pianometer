@@ -16,18 +16,18 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
           <div style="display: flex; flex-direction: column; justify-content: center; align-items: start;">
             <div>
               <label for="colorpicker">選擇顏色</label>
-              <input type="color" id="colorpicker" value="#ff0090" oninput="pianoVisualizer.changeColor()">
+              <input type="color" id="colorpicker" value="#ff0090" oninput="changeColor()">
             </div>
             <div style="display: flex; align-items: center;">
               <span style="margin-right: 5px;">彩虹模式</span>
-              <input type="checkbox" id="rainbow-mode-checkbox" onclick="pianoVisualizer.toggleRainbowMode(this)">
+              <input type="checkbox" id="rainbow-mode-checkbox" onclick="toggleRainbowMode(this)">
               <label for="rainbow-mode-checkbox">
                 <span class="switch-txt" turnOn="On" turnOff="Off"></span>
               </label>
             </div>
             <div style="display: flex; align-items: center;">
               <span style="margin-right: 5px;">顯示音名</span>
-              <input type="checkbox" id="display-note-names-checkbox" onclick="pianoVisualizer.toggleDisplayNoteNames(this)">
+              <input type="checkbox" id="display-note-names-checkbox" onclick="toggleDisplayNoteNames(this)">
               <label for="display-note-names-checkbox">
                 <span class="switch-txt" turnOn="On" turnOff="Off"></span>
               </label>

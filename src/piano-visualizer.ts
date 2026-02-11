@@ -1,10 +1,9 @@
 import p5 from 'p5';
-import 'p5/global';
 import * as Tonal from 'tonal';
 import { Input, WebMidi } from 'webmidi';
 
-let midiSelectSlider: p5.Element;
-let midiIn: Input[];
+let midiSelectSlider: p5.Element | null = null;
+let midiIn: Input | null = null;
 
 // for piano visualizer
 let nowPedaling: boolean = false; // is it pedaling?（不要動）
@@ -61,10 +60,12 @@ const sketch = function (p: p5) {
     for (let i = 0; i < WebMidi.outputs.length; i++) {
       console.log(i + ": " + WebMidi.outputs[i].name);
     }
-    midiSelectSlider = p.select("#slider") as p5.Element;
-    midiSelectSlider.attributes("max", WebMidi.inputs.length - 1);
-    midiSelectSlider.input(inputChanged);
-    midiIn = WebMidi.inputs[midiSelectSlider.value()]
+    midiSelectSlider = p.select("#slider");
+    if (midiSelectSlider) {
+      midiSelectSlider.attribute("max", String(Math.max(WebMidi.inputs.length - 1, 0)));
+      midiSelectSlider.input(inputChanged as any);
+      midiIn = WebMidi.inputs[Number(midiSelectSlider.value())];
+    }
 
     inputChanged();
   }).catch(function (err) {
@@ -76,8 +77,12 @@ const sketch = function (p: p5) {
     controllerChange(64, 0);
     controllerChange(67, 0);
 
-    midiIn.removeListener();
-    midiIn = WebMidi.inputs[midiSelectSlider.value()];
+    if (!midiIn) return;
+    try { midiIn.removeListener(); } catch (e) { }
+    if (midiSelectSlider) {
+      midiIn = WebMidi.inputs[Number(midiSelectSlider.value())];
+    }
+    if (!midiIn) return;
     midiIn.addListener('noteon', "all", function (e) {
       console.log("Received 'noteon' message (" + e.note.number + ", " + e.velocity + ").");
       noteOn(e.note.number, e.velocity);
@@ -91,7 +96,7 @@ const sketch = function (p: p5) {
       controllerChange(e.controller.number, e.value)
     });
     console.log(midiIn.name);
-    document.querySelector("#device").html(midiIn.name);
+    p.select('#device')?.html(String(midiIn.name));
   };
 
   function noteOn(pitch: number, velocity: number) {
@@ -136,38 +141,44 @@ const sketch = function (p: p5) {
     }
   }
 
-  function toggleRainbowMode(cb: HTMLInputElement) {
+  p.toggleRainbowMode = function (cb: HTMLInputElement) {
     rainbowMode = cb.checked;
     if (rainbowMode)
       p.select('#colorpicker')?.attribute('disabled', 'true');
     else
-      p.select('#colorpicker')?.removeAttribute('disabled')
+      p.select('#colorpicker')?.removeAttribute('disabled');
   }
 
-  function toggleDisplayNoteNames(cb: HTMLInputElement) {
+  p.toggleDisplayNoteNames = function (cb: HTMLInputElement) {
     displayNoteNames = cb.checked;
   }
 
-  function changeColor() {
-    keyOnColor = pedaledColor = color(p.select('#colorpicker').value());
-    darkenedColor = keyOnColor.levels.map(x => floor(x * .7));
-    pedaledColor = color(`rgb(${darkenedColor[0]}, ${darkenedColor[1]}, ${darkenedColor[2]})`)
+  p.changeColor = function () {
+    const picker = p.select('#colorpicker');
+    const val = picker ? picker.value() : '#ff00ff';
+    // @ts-ignore
+    keyOnColor = pedaledColor = p.color(val);
+    // @ts-ignore
+    const darkenedColor = keyOnColor.levels.map((x: number) => p.floor(x * .7));
+    // @ts-ignore
+    pedaledColor = p.color(`rgb(${darkenedColor[0]}, ${darkenedColor[1]}, ${darkenedColor[2]})`)
+    // @ts-ignore
     console.log(pedaledColor.levels);
   }
 
-  function setup() {
-    createCanvas(1098, 118).parent('piano-visualizer');
-    colorMode(HSB, 360, 100, 100, 100);
-    keyOnColor = color(326, 100, 100, 100); // <---- 編輯這裡換「按下時」的顏色！[HSB Color Mode] 
-    pedaledColor = color(326, 100, 70, 100); // <---- 編輯這裡換「踏板踩住」的顏色！[HSB Color Mode]
-    smooth();
-    frameRate(60);
+  p.setup = function () {
+    p.createCanvas(1098, 118).parent('piano-visualizer');
+    p.colorMode(p.HSB, 360, 100, 100, 100);
+    keyOnColor = p.color(326, 100, 100, 100); // <---- 編輯這裡換「按下時」的顏色！[HSB Color Mode] 
+    pedaledColor = p.color(326, 100, 70, 100); // <---- 編輯這裡換「踏板踩住」的顏色！[HSB Color Mode]
+    p.smooth();
+    p.frameRate(60);
     initKeys();
 
   }
 
-  function draw() {
-    background(0, 0, 20, 100);
+  p.draw = function () {
+    p.background(0, 0, 20, 100);
     pushHistories();
     drawWhiteKeys();
     drawBlackKeys();
@@ -177,7 +188,7 @@ const sketch = function (p: p5) {
 
   function calculateSessionTime() {
     let currentTime = new Date();
-    let timeElapsed = currentTime - sessionStartTime;
+    let timeElapsed = currentTime.getTime() - sessionStartTime.getTime();
     // Convert time elapsed to hours, minutes, and seconds
     let seconds = Math.floor((timeElapsed / 1000) % 60);
     let minutes = Math.floor((timeElapsed / (1000 * 60)) % 60);
@@ -199,24 +210,24 @@ const sketch = function (p: p5) {
 
   function drawWhiteKeys() {
     let wIndex = 0; // white key index
-    stroke(0, 0, 0);
-    strokeWeight(1);
+    p.stroke(0, 0, 0);
+    p.strokeWeight(1);
     for (let i = 21; i < 109; i++) {
       if (isBlack[i % 12] == 0) {
         // it's a white key
         if (isKeyOn[i] == 1 && !rainbowMode) {
-          fill(keyOnColor); // keypressed
+          p.fill(keyOnColor); // keypressed
         } else if (isKeyOn[i] == 1 && rainbowMode) {
-          fill(map(i, 21, 108, 0, 1080) % 360, 100, 100, 100); // rainbowMode
+          p.fill(p.map(i, 21, 108, 0, 1080) % 360, 100, 100, 100); // rainbowMode
         } else if (isPedaled[i] == 1 && !rainbowMode) {
-          fill(pedaledColor); // pedaled
+          p.fill(pedaledColor); // pedaled
         } else if (isPedaled[i] == 1 && rainbowMode) {
-          fill(map(i, 21, 108, 0, 1080) % 360, 100, 70, 100); // pedaled rainbowMode
+          p.fill(p.map(i, 21, 108, 0, 1080) % 360, 100, 70, 100); // pedaled rainbowMode
         } else {
-          fill(0, 0, 100); // white key
+          p.fill(0, 0, 100); // white key
         }
         let thisX = border + wIndex * (whiteKeyWidth + whiteKeySpace);
-        rect(thisX, keyAreaY, whiteKeyWidth, keyAreaHeight, radius);
+        p.rect(thisX, keyAreaY, whiteKeyWidth, keyAreaHeight, radius);
         // println(wIndex);
         wIndex++;
       }
@@ -225,8 +236,8 @@ const sketch = function (p: p5) {
 
   function drawBlackKeys() {
     let wIndex = 0; // white key index
-    stroke(0, 0, 0);
-    strokeWeight(1.5);
+    p.stroke(0, 0, 0);
+    p.strokeWeight(1.5);
     for (let i = 21; i < 109; i++) {
       if (isBlack[i % 12] == 0) {
         // it's a white key
@@ -236,65 +247,64 @@ const sketch = function (p: p5) {
       if (isBlack[i % 12] > 0) {
         // it's a black key
         if (isKeyOn[i] == 1 && !rainbowMode) {
-          fill(keyOnColor); // keypressed
+          p.fill(keyOnColor); // keypressed
         } else if (isKeyOn[i] == 1 && rainbowMode) {
-          fill(map(i, 21, 108, 0, 1080) % 360, 100, 100, 100); // rainbowMode
+          p.fill(p.map(i, 21, 108, 0, 1080) % 360, 100, 100, 100); // rainbowMode
         } else if (isPedaled[i] == 1 && !rainbowMode) {
-          fill(pedaledColor); // pedaled
+          p.fill(pedaledColor); // pedaled
         } else if (isPedaled[i] == 1 && rainbowMode) {
-          fill(map(i, 21, 108, 0, 1080) % 360, 100, 70, 100); // pedaled rainbowMode
+          p.fill(p.map(i, 21, 108, 0, 1080) % 360, 100, 70, 100); // pedaled rainbowMode
         } else {
-          fill(0, 0, 0); // white key
+          p.fill(0, 0, 0); // white key
         }
 
         let thisX = border + (wIndex - 1) * (whiteKeyWidth + whiteKeySpace) + isBlack[i % 12];
-        rect(thisX, keyAreaY - 1, blackKeyWidth, blackKeyHeight, bRadius);
+        p.rect(thisX, keyAreaY - 1, blackKeyWidth, blackKeyHeight, bRadius);
       }
     }
   }
 
   function drawNoteNames() {
     let noteNames = ["A", "B", "C", "D", "E", "F", "G"]; // 音名數組
-
-    textSize(12); // 設置文字大小
-    noStroke();
-    fill(0, 0, 0, 75); // 設置文字顏色為黑色
-    textAlign(CENTER, CENTER); // 設置文字對齊方式為居中
-    textStyle(NORMAL);
+    p.textSize(12); // 設置文字大小
+    p.noStroke();
+    p.fill(0, 0, 0, 75); // 設置文字顏色為黑色
+    p.textAlign(p.CENTER, p.CENTER); // 設置文字對齊方式為居中
+    p.textStyle(p.NORMAL);
 
     let wIndex = 0; // 白鍵索引
     for (let i = 0; i < 52; i++) { // 遍歷所有白鍵
       let thisX = border + wIndex * (whiteKeyWidth + whiteKeySpace);
       let thisY = keyAreaY + keyAreaHeight - 11; // 調整文字的垂直位置
       let noteName = noteNames[i % 7]; // 獲取對應的音名
-      text(noteName, thisX + whiteKeyWidth / 2, thisY); // 繪製音名文字
+      p.text(noteName, thisX + whiteKeyWidth / 2, thisY); // 繪製音名文字
       wIndex++;
     }
   }
 
   function drawTexts() {
-    stroke(0, 0, 10, 100);
-    fill(0, 0, 100, 90)
-    textFont('Monospace');
-    textStyle(BOLD);
-    textSize(14);
-    textAlign(LEFT, TOP);
+    p.stroke(0, 0, 10, 100);
+    p.fill(0, 0, 100, 90)
+    p.textFont('Monospace');
+    p.textStyle(p.BOLD);
+    p.textSize(14);
+    p.textAlign(p.LEFT, p.TOP);
 
     // TIME
     let timeText = "TIME" + "\n" + calculateSessionTime();
-    text(timeText, 5, 79);
+    p.text(timeText, 5, 79);
 
     // PEDAL
     let pedalText = "PEDALS" + "\nL " + convertNumberToBars(cc67now) + "  R " + convertNumberToBars(cc64now)
-    text(pedalText, 860, 79);
+    p.text(pedalText, 860, 79);
 
     // NOTES
     let notesText = "NOTE COUNT" + "\n" + totalNotesPlayed;
-    text(notesText, 85, 79);
+    p.text(notesText, 85, 79);
 
     // CALORIES
     let caloriesText = "CALORIES" + "\n" + (totalIntensityScore / 250).toFixed(3); // 250 Intensity = 1 kcal.
-    text(caloriesText, 350, 79);
+    p.text(caloriesText, 350, 79);
 
     // SHORT-TERM DENSITY
     let shortTermDensity = shortTermTotal.reduce((accumulator, currentValue) => accumulator + currentValue, 0); // Sum the array.
@@ -302,19 +312,19 @@ const sketch = function (p: p5) {
       notesSMax = shortTermDensity
     };
     let shortTermDensityText = "NPS(MAX)" + "\n" + shortTermDensity + " (" + notesSMax + ")";
-    text(shortTermDensityText, 190, 79);
+    p.text(shortTermDensityText, 190, 79);
 
     // LEGATO SCORE
     let legatoScore = legatoHistory.reduce((accumulator, currentValue) => accumulator + currentValue, 0)
     legatoScore /= 60;
     let legatoText = "LEGATO" + "\n" + legatoScore.toFixed(2);
-    text(legatoText, 276, 79);
+    p.text(legatoText, 276, 79);
 
     // NOW PLAYING
     let chordSymbol = Tonal.Chord.detect(getPressedKeys(false), { assumePerfectFifth: true })
     let chordSymbolWithoutM = chordSymbol.map((str) => str.replace(/M($|(?=\/))/g, "")); // get rid of the M's
     let nowPlayingText = truncateString(getPressedKeys(true), 47) + "\n" + truncateString(chordSymbolWithoutM.join(' '), 47);
-    text(nowPlayingText, 440, 79);
+    p.text(nowPlayingText, 440, 79);
   }
 
   function pushHistories() {
@@ -392,9 +402,9 @@ const sketch = function (p: p5) {
     return str.slice(0, maxLength - 3) + '...';
   }
 
-  function mouseClicked() {
+  p.mouseClicked = function () {
     // Save the canvas content as an image file
-    if (mouseX < 50 && mouseY < 50) {
+    if (p.mouseX < 50 && p.mouseY < 50) {
       const now = new Date();
       const strDate =
         now.getFullYear() +
@@ -405,31 +415,36 @@ const sketch = function (p: p5) {
         String(now.getMinutes()).padStart(2, '0') +
         String(now.getSeconds()).padStart(2, '0');
       const fileName = `nicechord-pianometer-${strDate}_${strTime}`;
-      saveCanvas(fileName, 'png');
+      p.saveCanvas(fileName, 'png');
     }
-    if (mouseY > 76) {
-      if (mouseX <= 84) {
+    if (p.mouseY > 76) {
+      if (p.mouseX <= 84) {
         sessionStartTime = new Date();
       }
 
-      if (mouseX > 84 && mouseX < 170) {
+      if (p.mouseX > 84 && p.mouseX < 170) {
         totalNotesPlayed = 0;
       }
 
-      if (mouseX > 187 && mouseX < 257) {
+      if (p.mouseX > 187 && p.mouseX < 257) {
         notesSMax = 0;
       }
 
-      if (mouseX > 347 && mouseX < 420) {
+      if (p.mouseX > 347 && p.mouseX < 420) {
         totalIntensityScore = 0; // RESET CALORIES
       }
 
-      if (mouseX > 441 && mouseX < 841) {
+      if (p.mouseX > 441 && p.mouseX < 841) {
         flatNames = !flatNames; // toggle flat  
       }
     }
-    console.log(mouseX, mouseY);
+    console.log(p.mouseX, p.mouseY);
   }
 };
 
-new p5(sketch);
+const p5Instance = new p5(sketch);
+
+// expose functions for HTML inline handlers
+(window as any).toggleRainbowMode = function (cb: HTMLInputElement) { return (p5Instance as any).toggleRainbowMode(cb); };
+(window as any).toggleDisplayNoteNames = function (cb: HTMLInputElement) { return (p5Instance as any).toggleDisplayNoteNames(cb); };
+(window as any).changeColor = function () { return (p5Instance as any).changeColor(); };
