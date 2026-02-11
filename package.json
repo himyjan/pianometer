@@ -1,0 +1,23 @@
+{
+  "name": "pianometer",
+  "private": true,
+  "version": "0.0.0",
+  "description": "88 鍵鋼琴鍵盤顯示器，練琴、拍影片、直播的好幫手！有以下的功能：",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "p5": "^2.2.0",
+    "tonal": "^6.4.3",
+    "webmidi": "^3.1.14"
+  },
+  "devDependencies": {
+    "@types/p5": "^1.7.7",
+    "@types/webmidi": "^2.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}
