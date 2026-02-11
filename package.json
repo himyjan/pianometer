@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "midicube": "^0.9.2",
     "p5": "^2.2.0",
     "tonal": "^6.4.3",
     "webmidi": "^3.1.14"

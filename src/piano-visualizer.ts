@@ -4,6 +4,9 @@ import { Input, WebMidi } from 'webmidi';
 
 let midiSelectSlider: p5.Element | null = null;
 let midiIn: Input | null = null;
+// audio cache for key samples
+const audioCache: Record<string, HTMLAudioElement> = {};
+const soundFontBase = '/src/soundfont/acoustic_grand_piano-mp3/';
 
 // for piano visualizer
 let nowPedaling: boolean = false; // is it pedaling?（不要動）
@@ -394,6 +397,30 @@ const sketch = function (p: p5) {
 
   }
 
+  function midiToNoteName(n: number) {
+    // use flat names for black keys to match provided mp3 filenames (Db, Eb, Gb, Ab, Bb)
+    const noteNames = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+    const name = noteNames[n % 12];
+    const octave = Math.floor(n / 12) - 1;
+    return `${name}${octave}`;
+  }
+
+  function playNoteSample(n: number) {
+    const noteName = midiToNoteName(n);
+    const path = `${soundFontBase}${noteName}.mp3`;
+    let a = audioCache[noteName];
+    if (!a) {
+      a = new Audio(path);
+      audioCache[noteName] = a;
+    }
+    try {
+      a.currentTime = 0;
+      void a.play();
+    } catch (e) {
+      console.warn('play error', e);
+    }
+  }
+
   function truncateString(str, maxLength = 40) {
     if (str.length <= maxLength) {
       return str;
@@ -417,28 +444,68 @@ const sketch = function (p: p5) {
       const fileName = `nicechord-pianometer-${strDate}_${strTime}`;
       p.saveCanvas(fileName, 'png');
     }
-    if (p.mouseY > 76) {
-      if (p.mouseX <= 84) {
+    // If click is inside keyboard area, detect which key (black keys first)
+    // Black keys area (drawn slightly higher)
+    const mx = p.mouseX;
+    const my = p.mouseY;
+    const keyTop = keyAreaY - 1;
+    const keyBottom = keyAreaY + keyAreaHeight;
+
+    if (my >= keyTop && my <= keyBottom) {
+      // check black keys first
+      let wIndex = 0;
+      for (let i = 21; i < 109; i++) {
+        if (isBlack[i % 12] == 0) {
+          wIndex++;
+          continue;
+        }
+        const thisX = border + (wIndex - 1) * (whiteKeyWidth + whiteKeySpace) + isBlack[i % 12];
+        const thisY = keyTop;
+        if (mx >= thisX && mx <= thisX + blackKeyWidth && my >= thisY && my <= thisY + blackKeyHeight) {
+          // black key clicked
+          playNoteSample(i);
+          return;
+        }
+      }
+
+      // check white keys
+      wIndex = 0;
+      for (let i = 21; i < 109; i++) {
+        if (isBlack[i % 12] == 0) {
+          const thisX = border + wIndex * (whiteKeyWidth + whiteKeySpace);
+          const thisY = keyAreaY;
+          if (mx >= thisX && mx <= thisX + whiteKeyWidth && my >= thisY && my <= thisY + keyAreaHeight) {
+            playNoteSample(i);
+            return;
+          }
+          wIndex++;
+        }
+      }
+    }
+
+    // other UI interactions below the keys
+    if (my > 76) {
+      if (mx <= 84) {
         sessionStartTime = new Date();
       }
 
-      if (p.mouseX > 84 && p.mouseX < 170) {
+      if (mx > 84 && mx < 170) {
         totalNotesPlayed = 0;
       }
 
-      if (p.mouseX > 187 && p.mouseX < 257) {
+      if (mx > 187 && mx < 257) {
         notesSMax = 0;
       }
 
-      if (p.mouseX > 347 && p.mouseX < 420) {
+      if (mx > 347 && mx < 420) {
         totalIntensityScore = 0; // RESET CALORIES
       }
 
-      if (p.mouseX > 441 && p.mouseX < 841) {
+      if (mx > 441 && mx < 841) {
         flatNames = !flatNames; // toggle flat  
       }
     }
-    console.log(p.mouseX, p.mouseY);
+    console.log(mx, my);
   }
 };
 

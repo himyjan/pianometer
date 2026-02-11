@@ -1,5 +1,6 @@
 import './style.css'
 import './piano-visualizer'
+import * as MIDI from 'midicube';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <body>
