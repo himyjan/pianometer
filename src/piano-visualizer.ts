@@ -74,14 +74,20 @@ const sketch = function (p: p5) {
         // avoid double-registering listeners for the same input
         if (inputsWithListeners.has(input.name)) return;
         input.addListener('noteon', 'all', function (e) {
-          // minimal logging to reduce overhead
-          // console.log("[global] noteon", e.note.number, e.velocity, "from", input.name);
-          noteOn(e.note.number, e.velocity);
-          try { spawnTile(e.note.number); } catch (err) { console.warn('spawnTile error', err); }
+          // treat Note On with velocity 0 as Note Off (some devices use this)
+          const num = e.note && typeof e.note.number === 'number' ? e.note.number : (e.noteNumber ?? null);
+          if (num === null) return;
+          if (e.velocity === 0) {
+            noteOff(num, e.velocity);
+          } else {
+            noteOn(num, e.velocity);
+            try { spawnTile(num); } catch (err) { console.warn('spawnTile error', err); }
+          }
         });
         input.addListener('noteoff', 'all', function (e) {
-          // console.log("[global] noteoff", e.note.number, e.velocity, "from", input.name);
-          noteOff(e.note.number, e.velocity);
+          const num = e.note && typeof e.note.number === 'number' ? e.note.number : (e.noteNumber ?? null);
+          if (num === null) return;
+          noteOff(num, e.velocity);
         });
         input.addListener('controlchange', 'all', function (e) {
           controllerChange(e.controller.number, e.value);
@@ -118,11 +124,8 @@ const sketch = function (p: p5) {
   });
 
   function inputChanged() {
-    isKeyOn.fill(0);
-    controllerChange(64, 0);
-    controllerChange(67, 0);
-
     // only update selected input reference and UI; listeners are attached globally
+    // do NOT clear isKeyOn here (clearing caused missed release events when switching)
     if (midiSelectSlider) {
       const idx = Number(midiSelectSlider.value());
       midiIn = WebMidi.inputs[idx] ?? null;
