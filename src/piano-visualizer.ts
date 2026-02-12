@@ -4,9 +4,14 @@ import { Input, WebMidi } from 'webmidi';
 
 let midiSelectSlider: p5.Element | null = null;
 let midiIn: Input | null = null;
+const inputsWithListeners = new Set<string>();
 // audio cache for key samples
 const audioCache: Record<string, HTMLAudioElement> = {};
 const soundFontBase = '/src/soundfont/acoustic_grand_piano-mp3/';
+// VFX tiles
+let tiles: any[] = [];
+let tileAreaTop = 10; // top Y of tile area (will be set in setup)
+let tileAreaBottom = 0; // bottom Y of tile area (computed from key area)
 
 // for piano visualizer
 let nowPedaling: boolean = false; // is it pedaling?（不要動）
@@ -63,16 +68,53 @@ const sketch = function (p: p5) {
     for (let i = 0; i < WebMidi.outputs.length; i++) {
       console.log(i + ": " + WebMidi.outputs[i].name);
     }
+    // attach listeners to all inputs to ensure we catch every keypress
+    WebMidi.inputs.forEach((input) => {
+      try {
+        // avoid double-registering listeners for the same input
+        if (inputsWithListeners.has(input.name)) return;
+        input.addListener('noteon', 'all', function (e) {
+          // minimal logging to reduce overhead
+          // console.log("[global] noteon", e.note.number, e.velocity, "from", input.name);
+          noteOn(e.note.number, e.velocity);
+          try { spawnTile(e.note.number); } catch (err) { console.warn('spawnTile error', err); }
+        });
+        input.addListener('noteoff', 'all', function (e) {
+          // console.log("[global] noteoff", e.note.number, e.velocity, "from", input.name);
+          noteOff(e.note.number, e.velocity);
+        });
+        input.addListener('controlchange', 'all', function (e) {
+          controllerChange(e.controller.number, e.value);
+        });
+        inputsWithListeners.add(input.name);
+      } catch (err) {
+        console.warn('Could not attach global listeners to input', input.name, err);
+      }
+    });
+    // update UI controls depending on available inputs
     midiSelectSlider = p.select("#slider");
     if (midiSelectSlider) {
       midiSelectSlider.attribute("max", String(Math.max(WebMidi.inputs.length - 1, 0)));
       midiSelectSlider.input(inputChanged as any);
-      midiIn = WebMidi.inputs[Number(midiSelectSlider.value())];
+      // disable slider when no inputs
+      if (WebMidi.inputs.length === 0) {
+        midiSelectSlider.attribute('disabled', 'true');
+      } else {
+        midiSelectSlider.removeAttribute('disabled');
+        midiIn = WebMidi.inputs[Number(midiSelectSlider.value())];
+      }
+    }
+
+    if (WebMidi.inputs.length === 0) {
+      p.select('#device')?.html('No MIDI input found. Connect a device and reload, or grant permission.');
     }
 
     inputChanged();
   }).catch(function (err) {
     console.log("WebMidi could not be enabled.", err);
+    // show helpful message in UI so user isn't left wondering
+    const msg = 'WebMIDI could not be enabled. Use Chrome/Edge and open the app over https or localhost. ' + (err && err.message ? err.message : String(err));
+    try { p.select('#device')?.html(msg); } catch (e) { }
   });
 
   function inputChanged() {
@@ -80,26 +122,16 @@ const sketch = function (p: p5) {
     controllerChange(64, 0);
     controllerChange(67, 0);
 
-    if (!midiIn) return;
-    try { midiIn.removeListener(); } catch (e) { }
+    // only update selected input reference and UI; listeners are attached globally
     if (midiSelectSlider) {
-      midiIn = WebMidi.inputs[Number(midiSelectSlider.value())];
+      const idx = Number(midiSelectSlider.value());
+      midiIn = WebMidi.inputs[idx] ?? null;
     }
-    if (!midiIn) return;
-    midiIn.addListener('noteon', "all", function (e) {
-      console.log("Received 'noteon' message (" + e.note.number + ", " + e.velocity + ").");
-      noteOn(e.note.number, e.velocity);
-    });
-    midiIn.addListener('noteoff', "all", function (e) {
-      console.log("Received 'noteoff' message (" + e.note.number + ", " + e.velocity + ").");
-      noteOff(e.note.number, e.velocity);
-    })
-    midiIn.addListener('controlchange', 'all', function (e) {
-      console.log("Received control change message:", e.controller.number, e.value);
-      controllerChange(e.controller.number, e.value)
-    });
-    console.log(midiIn.name);
-    p.select('#device')?.html(String(midiIn.name));
+    if (midiIn) {
+      p.select('#device')?.html(String(midiIn.name));
+    } else {
+      p.select('#device')?.html('No MIDI input selected');
+    }
   };
 
   function noteOn(pitch: number, velocity: number) {
@@ -112,6 +144,8 @@ const sketch = function (p: p5) {
     if (nowPedaling) {
       isPedaled[pitch] = 1;
     }
+    // spawn VFX tile for this note
+    spawnTile(pitch);
   }
 
   function noteOff(pitch: number, velocity: number) {
@@ -170,12 +204,17 @@ const sketch = function (p: p5) {
   }
 
   p.setup = function () {
-    p.createCanvas(1098, 118).parent('piano-visualizer');
+    // increase canvas height and reserve space above keys for VFX
+    p.createCanvas(1098, 240).parent('piano-visualizer');
     p.colorMode(p.HSB, 360, 100, 100, 100);
     keyOnColor = p.color(326, 100, 100, 100); // <---- 編輯這裡換「按下時」的顏色！[HSB Color Mode] 
     pedaledColor = p.color(326, 100, 70, 100); // <---- 編輯這裡換「踏板踩住」的顏色！[HSB Color Mode]
     p.smooth();
     p.frameRate(60);
+    // set key area lower so tiles have room above
+    tileAreaTop = 20;
+    keyAreaY = 120;
+    keyAreaHeight = 70;
     initKeys();
 
   }
@@ -185,6 +224,8 @@ const sketch = function (p: p5) {
     pushHistories();
     drawWhiteKeys();
     drawBlackKeys();
+    // VFX tiles draw on top of keys
+    drawTiles();
     if (displayNoteNames) { drawNoteNames(); };
     drawTexts();
   }
@@ -292,22 +333,24 @@ const sketch = function (p: p5) {
     p.textStyle(p.BOLD);
     p.textSize(14);
     p.textAlign(p.LEFT, p.TOP);
+    // TIME and stats: place below keyboard area
+    const statsY = keyAreaY + keyAreaHeight + 8;
 
     // TIME
     let timeText = "TIME" + "\n" + calculateSessionTime();
-    p.text(timeText, 5, 79);
+    p.text(timeText, 5, statsY);
 
     // PEDAL
     let pedalText = "PEDALS" + "\nL " + convertNumberToBars(cc67now) + "  R " + convertNumberToBars(cc64now)
-    p.text(pedalText, 860, 79);
+    p.text(pedalText, 860, statsY);
 
     // NOTES
     let notesText = "NOTE COUNT" + "\n" + totalNotesPlayed;
-    p.text(notesText, 85, 79);
+    p.text(notesText, 85, statsY);
 
     // CALORIES
     let caloriesText = "CALORIES" + "\n" + (totalIntensityScore / 250).toFixed(3); // 250 Intensity = 1 kcal.
-    p.text(caloriesText, 350, 79);
+    p.text(caloriesText, 350, statsY);
 
     // SHORT-TERM DENSITY
     let shortTermDensity = shortTermTotal.reduce((accumulator, currentValue) => accumulator + currentValue, 0); // Sum the array.
@@ -315,19 +358,19 @@ const sketch = function (p: p5) {
       notesSMax = shortTermDensity
     };
     let shortTermDensityText = "NPS(MAX)" + "\n" + shortTermDensity + " (" + notesSMax + ")";
-    p.text(shortTermDensityText, 190, 79);
+    p.text(shortTermDensityText, 190, statsY);
 
     // LEGATO SCORE
     let legatoScore = legatoHistory.reduce((accumulator, currentValue) => accumulator + currentValue, 0)
     legatoScore /= 60;
     let legatoText = "LEGATO" + "\n" + legatoScore.toFixed(2);
-    p.text(legatoText, 276, 79);
+    p.text(legatoText, 276, statsY);
 
     // NOW PLAYING
     let chordSymbol = Tonal.Chord.detect(getPressedKeys(false), { assumePerfectFifth: true })
     let chordSymbolWithoutM = chordSymbol.map((str) => str.replace(/M($|(?=\/))/g, "")); // get rid of the M's
     let nowPlayingText = truncateString(getPressedKeys(true), 47) + "\n" + truncateString(chordSymbolWithoutM.join(' '), 47);
-    p.text(nowPlayingText, 440, 79);
+    p.text(nowPlayingText, 440, statsY);
   }
 
   function pushHistories() {
@@ -419,6 +462,72 @@ const sketch = function (p: p5) {
     } catch (e) {
       console.warn('play error', e);
     }
+    // also spawn VFX tile when sample is played (covers mouse clicks)
+    spawnTile(n);
+  }
+
+  function spawnTile(midiNumber: number) {
+    const cx = getKeyCenterX(midiNumber);
+    if (cx == null) return;
+    // compute bottom of tile area (just above keys)
+    tileAreaBottom = keyAreaY - 2;
+    const hue = (midiNumber - 21) * 3 % 360;
+    // spawn at bottom of tile area
+    tiles.push({ x: cx, y: tileAreaBottom, w: 28, h: 16, vy: 1 + Math.random() * 2, life: 80, hue, alpha: 100 });
+  }
+
+  function getKeyCenterX(n: number) {
+    // compute key center x by iterating keys same as draw functions
+    let wIndex = 0;
+    for (let i = 21; i < 109; i++) {
+      if (isBlack[i % 12] == 0) {
+        const thisX = border + wIndex * (whiteKeyWidth + whiteKeySpace);
+        const center = thisX + whiteKeyWidth / 2;
+        if (i === n) return center;
+        wIndex++;
+      } else {
+        const center = border + (wIndex - 1) * (whiteKeyWidth + whiteKeySpace) + isBlack[i % 12] + blackKeyWidth / 2;
+        if (i === n) return center;
+      }
+    }
+    return null;
+  }
+
+  function drawTiles() {
+    // compute tile area bottom in case key area changed
+    tileAreaBottom = keyAreaY - 2;
+
+    // draw tile area background (subtle)
+    p.push();
+    p.noStroke();
+    p.fill(0, 0, 0, 30);
+    p.rect(0, tileAreaTop, p.width, tileAreaBottom - tileAreaTop);
+    p.pop();
+
+    // update and draw tiles (from bottom to top)
+    for (let i = tiles.length - 1; i >= 0; i--) {
+      const t = tiles[i];
+      // update: move upward
+      t.y -= t.vy;
+      // horizontal jitter
+      t.x += Math.sin((t.y + i) / 12) * 0.8;
+      // fade
+      t.life -= 1;
+      t.alpha = p.map(t.life, 0, 80, 0, 100);
+
+      // draw glow tile
+      p.push();
+      p.noStroke();
+      p.fill(t.hue, 90, 90, t.alpha);
+      // slight blur effect by drawing multiple rects with increasing size and lower alpha
+      p.rect(t.x - t.w / 2, t.y - t.h / 2, t.w, t.h, 4);
+      p.fill(t.hue, 90, 90, t.alpha * 0.4);
+      p.rect(t.x - (t.w * 0.7) / 2, t.y - (t.h * 0.7) / 2, t.w * 0.7, t.h * 0.7, 3);
+      p.pop();
+
+      // remove when past top of tile area or life ended
+      if (t.life <= 0 || t.y + t.h < tileAreaTop) tiles.splice(i, 1);
+    }
   }
 
   function truncateString(str, maxLength = 40) {
@@ -484,7 +593,7 @@ const sketch = function (p: p5) {
     }
 
     // other UI interactions below the keys
-    if (my > 76) {
+    if (my > keyAreaY + keyAreaHeight) {
       if (mx <= 84) {
         sessionStartTime = new Date();
       }
