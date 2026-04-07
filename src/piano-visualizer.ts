@@ -291,6 +291,13 @@ const sketch = function (p: any) {
     }
 
     isKeyOn[pitch] = 0;
+    if (cc64now > 0) {
+      // sustain the note while damper pedal is down
+      isPedaled[pitch] = 1;
+    } else {
+      isPedaled[pitch] = 0;
+    }
+
     // when releasing a key, create a released tile that slides upward
     if ((keyPressedFrames[pitch] ?? 0) > 0) {
       const cx = getKeyCenterX(pitch);
@@ -319,17 +326,19 @@ const sketch = function (p: any) {
     if (number == 64) {
       cc64now = value;
 
-      if (value >= 64) {
+      if (value > 0) {
         nowPedaling = true;
         for (let i = 0; i < 128; i++) {
-          // copy key on to pedal
+          // copy currently depressed keys to sustain state
           isPedaled[i] = isKeyOn[i];
         }
       } else if (value < 64) {
         nowPedaling = false;
         for (let i = 0; i < 128; i++) {
-          // reset isPedaled
-          isPedaled[i] = 0;
+          // release sustained notes when pedal lifts, but keep held keys on
+          if (isKeyOn[i] === 0) {
+            isPedaled[i] = 0;
+          }
         }
       }
     }
