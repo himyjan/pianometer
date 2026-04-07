@@ -197,6 +197,7 @@ const sketch = function (p: any) {
           } else {
             console.log("Received 'noteon' message (" + e.note.number + ", " + e.velocity + ").");
             noteOn(num, e.velocity);
+            if (playNoteSound) { playNoteSample(num); }
           }
         });
         (input as any).addListener('noteoff', 'all', function (e: any) {
