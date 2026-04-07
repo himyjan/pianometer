@@ -1,6 +1,8 @@
 import p5 from 'p5';
 import * as Tonal from 'tonal';
 import { Input, WebMidi } from 'webmidi';
+// @ts-ignore
+import MidiWriter from 'midi-writer-js';
 
 let midiSelectSlider: p5.Element | null = null;
 let midiIn: Input | null = null;
@@ -35,9 +37,119 @@ let cc64now: number = 0; // 現在的踏板狀態
 let cc67now: number = 0;
 
 let sessionStartTime: Date = new Date();
-let sessionTotalSeconds: number = 0;
 
 let flatNames: boolean = false;
+
+// MIDI recording variables
+let isRecording: boolean = false;
+let isPaused: boolean = false;
+let recordedEvents: any[] = [];
+let recordingStartTime: number = 0;
+let activeNotes: Map<number, number> = new Map(); // pitch -> startTime
+
+// Recording control functions
+function startRecording() {
+  if (!isRecording) {
+    isRecording = true;
+    isPaused = false;
+    recordedEvents = [];
+    recordingStartTime = performance.now();
+    console.log('Recording started');
+    updateRecordingStatus();
+  }
+}
+
+function pauseRecording() {
+  if (isRecording) {
+    isPaused = !isPaused;
+    console.log(isPaused ? 'Recording paused' : 'Recording resumed');
+    updateRecordingStatus();
+  }
+}
+
+function stopRecording() {
+  if (isRecording) {
+    isRecording = false;
+    isPaused = false;
+    activeNotes.clear(); // Clear any hanging notes
+    console.log('Recording stopped');
+    updateRecordingStatus();
+  }
+}
+
+function clearRecording() {
+  recordedEvents = [];
+  activeNotes.clear();
+  isRecording = false;
+  isPaused = false;
+  console.log('Recording cleared');
+  updateRecordingStatus();
+}
+
+function updateRecordingStatus() {
+  const statusEl = document.getElementById('recording-status');
+  if (statusEl) {
+    if (isRecording) {
+      if (isPaused) {
+        statusEl.textContent = '錄製中 (暫停)';
+        statusEl.style.color = 'orange';
+      } else {
+        statusEl.textContent = '錄製中';
+        statusEl.style.color = 'red';
+      }
+    } else {
+      statusEl.textContent = '未錄製';
+      statusEl.style.color = 'green';
+    }
+  }
+}
+
+function exportRecording() {
+  if (recordedEvents.length === 0) {
+    alert('No recorded events to export');
+    return;
+  }
+
+  // Create MIDI file using midi-writer-js
+  const track = new MidiWriter.Track();
+
+  // Sort events by start time
+  const sortedEvents = recordedEvents.sort((a, b) => a.startTime - b.startTime);
+
+  // Convert times to ticks (assuming 120 BPM, 480 ticks per beat)
+  const ticksPerSecond = 480 * 2; // 120 BPM = 2 beats per second
+
+  for (const event of sortedEvents) {
+    if (event.type === 'note') {
+      const startTicks = Math.round((event.startTime / 1000) * ticksPerSecond);
+      const durationTicks = Math.max(1, Math.round((event.duration / 1000) * ticksPerSecond));
+
+      track.addEvent(new MidiWriter.NoteEvent({
+        pitch: event.pitch,
+        duration: 'T' + durationTicks,
+        velocity: event.velocity,
+        startTick: startTicks
+      }));
+    }
+  }
+
+  // Create MIDI file
+  const writer = new MidiWriter.Writer(track);
+  const midiData = writer.buildFile();
+
+  // Create download link
+  const blob = new Blob([midiData], { type: 'audio/midi' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'recorded.mid';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  console.log('MIDI file exported');
+}
 
 // note counter
 let notesThisFrame: number = 0;
@@ -47,16 +159,12 @@ let legatoHistory: number[] = new Array(60).fill(0);
 let notesSMax: number = 0;
 let totalIntensityScore: number = 0;
 
-// for key pressed counter
-let notePressedCount: number = 0;
-let notePressedCountHistory: number[] = [];
-
 // for long press visualization
 let keyPressedFrames: number[] = []; // tracks how many frames each key has been pressed (0 = not pressed)
 let releasedTiles: any[] = []; // tracks released notes that continue to slide upward
 
 
-const sketch = function (p: p5) {
+const sketch = function (p: any) {
   WebMidi.enable().then(() => { // enable WebMidi (promise-based)
     console.log("WebMidi enabled!");
 
@@ -77,7 +185,7 @@ const sketch = function (p: p5) {
       try {
         // avoid double-registering listeners for the same input
         if (inputsWithListeners.has(input.name)) return;
-        input.addListener('noteon', 'all', function (e) {
+        (input as any).addListener('noteon', 'all', function (e: any) {
           // treat Note On with velocity 0 as Note Off (some devices use this)
           const num = e.note && typeof e.note.number === 'number' ? e.note.number : (e.noteNumber ?? null);
           if (num === null) return;
@@ -87,12 +195,12 @@ const sketch = function (p: p5) {
             noteOn(num, e.velocity);
           }
         });
-        input.addListener('noteoff', 'all', function (e) {
+        (input as any).addListener('noteoff', 'all', function (e: any) {
           const num = e.note && typeof e.note.number === 'number' ? e.note.number : (e.noteNumber ?? null);
           if (num === null) return;
           noteOff(num, e.velocity);
         });
-        input.addListener('controlchange', 'all', function (e) {
+        (input as any).addListener('controlchange', 'all', function (e: any) {
           controllerChange(e.controller.number, e.value);
         });
         inputsWithListeners.add(input.name);
@@ -145,6 +253,12 @@ const sketch = function (p: p5) {
     notesThisFrame++;
     totalIntensityScore += velocity;
 
+    // Record MIDI event if recording
+    if (isRecording && !isPaused) {
+      const currentTime = performance.now();
+      activeNotes.set(pitch, currentTime);
+    }
+
     // piano visualizer
     isKeyOn[pitch] = 1;
     if (nowPedaling) {
@@ -157,6 +271,21 @@ const sketch = function (p: p5) {
   }
 
   function noteOff(pitch: number, velocity: number) {
+    // Record MIDI event if recording
+    if (isRecording && !isPaused && activeNotes.has(pitch)) {
+      const startTime = activeNotes.get(pitch)!;
+      const endTime = performance.now();
+      const duration = endTime - startTime;
+      recordedEvents.push({
+        type: 'note',
+        pitch,
+        velocity,
+        startTime: startTime - recordingStartTime,
+        duration
+      });
+      activeNotes.delete(pitch);
+    }
+
     isKeyOn[pitch] = 0;
     // when releasing a key, create a released tile that slides upward
     if ((keyPressedFrames[pitch] ?? 0) > 0) {
@@ -245,7 +374,7 @@ const sketch = function (p: p5) {
     keyAreaY = 120;
     keyAreaHeight = 70;
     initKeys();
-
+    updateRecordingStatus(); // Initialize status display
   }
 
   p.draw = function () {
@@ -274,7 +403,6 @@ const sketch = function (p: p5) {
     let seconds = Math.floor((timeElapsed / 1000) % 60);
     let minutes = Math.floor((timeElapsed / (1000 * 60)) % 60);
     let hours = Math.floor((timeElapsed / (1000 * 60 * 60)) % 24);
-    sessionTotalSeconds = Math.floor(timeElapsed / 1000);
     // Pad minutes and seconds with leading zeros
     let paddedMinutes = String(minutes).padStart(2, '0');
     let paddedSeconds = String(seconds).padStart(2, '0');
@@ -405,9 +533,9 @@ const sketch = function (p: p5) {
     p.text(legatoText, 276, statsY);
 
     // NOW PLAYING
-    let chordSymbol = Tonal.Chord.detect(getPressedKeys(false), { assumePerfectFifth: true })
+    let chordSymbol = Tonal.Chord.detect(getPressedKeys(false) as string[], { assumePerfectFifth: true })
     let chordSymbolWithoutM = chordSymbol.map((str) => str.replace(/M($|(?=\/))/g, "")); // get rid of the M's
-    let nowPlayingText = truncateString(getPressedKeys(true), 47) + "\n" + truncateString(chordSymbolWithoutM.join(' '), 47);
+    let nowPlayingText = truncateString(getPressedKeys(true) as string, 47) + "\n" + truncateString(chordSymbolWithoutM.join(' '), 47);
     p.text(nowPlayingText, 440, statsY);
   }
 
@@ -421,7 +549,7 @@ const sketch = function (p: p5) {
 
   }
 
-  function convertNumberToBars(number) {
+  function convertNumberToBars(number: number) {
     if (number < 0 || number > 127) {
       throw new Error('Number must be between 0 and 127');
     }
@@ -447,7 +575,7 @@ const sketch = function (p: p5) {
     return combinedString;
   }
 
-  function getPressedKeys(returnString = true) {
+  function getPressedKeys(returnString: boolean = true): string | string[] {
     let pressedOrPedaled = [];
 
     for (let i = 0; i < isKeyOn.length; i++) {
@@ -623,7 +751,7 @@ const sketch = function (p: p5) {
     }
   }
 
-  function truncateString(str, maxLength = 40) {
+  function truncateString(str: string, maxLength: number = 40) {
     if (str.length <= maxLength) {
       return str;
     }
@@ -717,3 +845,8 @@ const p5Instance = new p5(sketch);
 (window as any).toggleRainbowMode = function (cb: HTMLInputElement) { return (p5Instance as any).toggleRainbowMode(cb); };
 (window as any).toggleDisplayNoteNames = function (cb: HTMLInputElement) { return (p5Instance as any).toggleDisplayNoteNames(cb); };
 (window as any).changeColor = function () { return (p5Instance as any).changeColor(); };
+(window as any).startRecording = startRecording;
+(window as any).pauseRecording = pauseRecording;
+(window as any).stopRecording = stopRecording;
+(window as any).clearRecording = clearRecording;
+(window as any).exportRecording = exportRecording;

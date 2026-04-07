@@ -37,6 +37,19 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       </div>
       <br />
 
+      <div>
+        <h5>MIDI 錄製控制</h5>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <button id="record-btn" onclick="startRecording()">錄製</button>
+          <button id="pause-btn" onclick="pauseRecording()">暫停</button>
+          <button id="stop-btn" onclick="stopRecording()">停止</button>
+          <button id="clear-btn" onclick="clearRecording()">清除</button>
+          <button id="export-btn" onclick="exportRecording()">匯出 MIDI</button>
+        </div>
+        <div id="recording-status" style="text-align: center; margin-top: 10px; font-weight: bold; color: red;">未錄製</div>
+      </div>
+      <br />
+
     </div>
   </div>
 
