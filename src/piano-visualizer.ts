@@ -33,6 +33,7 @@ let keyAreaY: number = 3; // 白鍵從 Y 軸座標多少開始？(default: 3)
 let keyAreaHeight: number = 70; // 白鍵多高？(default: 70)
 let rainbowMode: boolean = false; // 彩虹模式 (default: false)
 let displayNoteNames: boolean = false; // 白鍵要不要顯示音名 (default: false)
+let playNoteSound: boolean = false; // 是否播放音符聲音 (default: false)
 let cc64now: number = 0; // 現在的右踏板狀態(0 ～ 1)
 let cc66now: number = 0; // 現在的中踏板狀態(0 ～ 1)
 let cc67now: number = 0; // 現在的左踏板狀態(0 ～ 1)
@@ -364,6 +365,10 @@ const sketch = function (p: any) {
     displayNoteNames = cb.checked;
   }
 
+  p.togglePlayNoteSound = function (cb: HTMLInputElement) {
+    playNoteSound = cb.checked;
+  }
+
   p.changeColor = function () {
     const picker = p.select('#colorpicker');
     const val = picker ? picker.value() : '#ff00ff';
@@ -634,7 +639,7 @@ const sketch = function (p: any) {
     return p.map(midiNumber, 21, 108, 0, 1080) % 360;
   }
 
-  function playNoteSample(n: number, spawn: boolean = true) {
+  function playNoteSample(n: number) {
     const noteName = midiToNoteName(n);
     const path = `${soundFontBase}${noteName}.mp3`;
     let a = audioCache[noteName];
@@ -648,28 +653,6 @@ const sketch = function (p: any) {
     } catch (e) {
       console.warn('play error', e);
     }
-    if (spawn) {
-      spawnTile(n);
-    }
-  }
-
-  function spawnTile(midiNumber: number) {
-    const cx = getKeyCenterX(midiNumber);
-    if (cx == null) return;
-    // compute bottom of tile area (just above keys)
-    tileAreaBottom = keyAreaY - 2;
-    const hue = getRainbowHue(midiNumber);
-    tiles.push({
-      x: cx,
-      y: tileAreaBottom,
-      w: 28,
-      h: 16,
-      vy: 2,
-      life: 80,
-      hue,
-      alpha: 100,
-      keyColor: hue
-    });
   }
 
   function getKeyCenterX(n: number) {
@@ -810,7 +793,7 @@ const sketch = function (p: any) {
         if (mx >= thisX && mx <= thisX + blackKeyWidth && my >= thisY && my <= thisY + blackKeyHeight) {
           mousePressedKey = i;
           noteOn(i, 100);
-          playNoteSample(i, false);
+          if (playNoteSound) { playNoteSample(i); }
           return;
         }
       }
@@ -824,7 +807,7 @@ const sketch = function (p: any) {
           if (mx >= thisX && mx <= thisX + whiteKeyWidth && my >= thisY && my <= thisY + keyAreaHeight) {
             mousePressedKey = i;
             noteOn(i, 100);
-            playNoteSample(i, false);
+            if (playNoteSound) { playNoteSample(i); }
             return;
           }
           wIndex++;
@@ -922,6 +905,7 @@ const p5Instance = new p5(sketch);
 // expose functions for HTML inline handlers
 (window as any).toggleRainbowMode = function (cb: HTMLInputElement) { return (p5Instance as any).toggleRainbowMode(cb); };
 (window as any).toggleDisplayNoteNames = function (cb: HTMLInputElement) { return (p5Instance as any).toggleDisplayNoteNames(cb); };
+(window as any).togglePlayNoteSound = function (cb: HTMLInputElement) { return (p5Instance as any).togglePlayNoteSound(cb); };
 (window as any).changeColor = function () { return (p5Instance as any).changeColor(); };
 (window as any).startRecording = startRecording;
 (window as any).pauseRecording = pauseRecording;

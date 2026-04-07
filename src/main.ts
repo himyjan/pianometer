@@ -32,20 +32,14 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
                 <span class="switch-txt" turnOn="On" turnOff="Off"></span>
               </label>
             </div>
+            <div style="display: flex; align-items: center;">
+              <span style="margin-right: 5px;">播放聲音</span>
+              <input type="checkbox" id="play-note-sound-checkbox" onclick="togglePlayNoteSound(this)">
+              <label for="play-note-sound-checkbox">
+                <span class="switch-txt" turnOn="On" turnOff="Off"></span>
+              </label>
+            </div>
           </div>
-        </div>
-      </div>
-      <br />
-
-      <div>
-        <h5>MIDI 錄製控制</h5>
-        <div style="display: flex; gap: 10px; justify-content: center;">
-          <div id="recording-status" style="text-align: center; font-weight: bold; color: red;">未錄製</div>
-          <button id="record-btn" onclick="startRecording()">錄製</button>
-          <button id="pause-btn" onclick="pauseRecording()">暫停</button>
-          <button id="stop-btn" onclick="stopRecording()">停止</button>
-          <button id="clear-btn" onclick="clearRecording()">清除</button>
-          <button id="export-btn" onclick="exportRecording()">匯出 MIDI</button>
         </div>
       </div>
       <br />
@@ -69,6 +63,16 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   </div>
 
 
+  <div style="margin-top: 10px;">
+    <h5>MIDI 錄製控制</h5>
+    <div style="display: flex; gap: 10px; justify-content: center;">
+      <div id="recording-status" style="text-align: center; font-weight: bold; color: red;">未錄製</div>
+      <button id="record-btn" onclick="startRecording()">錄製</button>
+      <button id="pause-btn" onclick="pauseRecording()">暫停</button>
+      <button id="stop-btn" onclick="stopRecording()">停止</button>
+      <button id="clear-btn" onclick="clearRecording()">清除</button>
+      <button id="export-btn" onclick="exportRecording()">匯出 MIDI</button>
+    </div>
   </div>
 </body>
 `
