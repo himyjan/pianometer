@@ -47,6 +47,7 @@ let isPaused: boolean = false;
 let recordedEvents: any[] = [];
 let recordingStartTime: number = 0;
 let activeNotes: Map<number, number> = new Map(); // pitch -> startTime
+let mousePressedKey: number | null = null;
 
 // Recording control functions
 function startRecording() {
@@ -270,8 +271,6 @@ const sketch = function (p: any) {
     }
     // initialize key press counter (0 means just pressed)
     keyPressedFrames[pitch] = 0;
-    // spawn VFX tile for this note
-    spawnTile(pitch);
   }
 
   function noteOff(pitch: number, velocity: number) {
@@ -631,7 +630,7 @@ const sketch = function (p: any) {
     return `${name}${octave}`;
   }
 
-  function playNoteSample(n: number) {
+  function playNoteSample(n: number, spawn: boolean = true) {
     const noteName = midiToNoteName(n);
     const path = `${soundFontBase}${noteName}.mp3`;
     let a = audioCache[noteName];
@@ -645,8 +644,9 @@ const sketch = function (p: any) {
     } catch (e) {
       console.warn('play error', e);
     }
-    // also spawn VFX tile when sample is played (covers mouse clicks)
-    spawnTile(n);
+    if (spawn) {
+      spawnTile(n);
+    }
   }
 
   function spawnTile(midiNumber: number) {
@@ -654,9 +654,18 @@ const sketch = function (p: any) {
     if (cx == null) return;
     // compute bottom of tile area (just above keys)
     tileAreaBottom = keyAreaY - 2;
-    // Disabled short burst tiles - only long press rectangles are shown
-    // const hue = (midiNumber - 21) * 3 % 360;
-    // tiles.push({ x: cx, y: tileAreaBottom, w: 28, h: 16, vy: 2, life: 80, hue, alpha: 100 });
+    const hue = (midiNumber - 21) * 3 % 360;
+    tiles.push({
+      x: cx,
+      y: tileAreaBottom,
+      w: 28,
+      h: 16,
+      vy: 2,
+      life: 80,
+      hue,
+      alpha: 100,
+      keyColor: rainbowMode ? hue : null
+    });
   }
 
   function getKeyCenterX(n: number) {
@@ -756,10 +765,11 @@ const sketch = function (p: any) {
       // draw glow tile
       p.push();
       p.noStroke();
-      p.fill(t.hue, 90, 90, t.alpha);
+      const tileHue = rainbowMode && typeof t.keyColor === 'number' ? t.keyColor : t.hue;
+      p.fill(tileHue, 90, 90, t.alpha);
       // slight blur effect by drawing multiple rects with increasing size and lower alpha
       p.rect(t.x - t.w / 2, t.y - t.h / 2, t.w, t.h, 4);
-      p.fill(t.hue, 90, 90, t.alpha * 0.4);
+      p.fill(tileHue, 90, 90, t.alpha * 0.4);
       p.rect(t.x - (t.w * 0.7) / 2, t.y - (t.h * 0.7) / 2, t.w * 0.7, t.h * 0.7, 3);
       p.pop();
 
@@ -775,6 +785,55 @@ const sketch = function (p: any) {
 
     return str.slice(0, maxLength - 3) + '...';
   }
+
+  p.mousePressed = function () {
+    const mx = p.mouseX;
+    const my = p.mouseY;
+    const keyTop = keyAreaY - 1;
+    const keyBottom = keyAreaY + keyAreaHeight;
+
+    if (my >= keyTop && my <= keyBottom) {
+      // check black keys first
+      let wIndex = 0;
+      for (let i = 21; i < 109; i++) {
+        if (isBlack[i % 12] == 0) {
+          wIndex++;
+          continue;
+        }
+        const thisX = border + (wIndex - 1) * (whiteKeyWidth + whiteKeySpace) + isBlack[i % 12];
+        const thisY = keyTop;
+        if (mx >= thisX && mx <= thisX + blackKeyWidth && my >= thisY && my <= thisY + blackKeyHeight) {
+          mousePressedKey = i;
+          noteOn(i, 100);
+          playNoteSample(i, false);
+          return;
+        }
+      }
+
+      // check white keys
+      wIndex = 0;
+      for (let i = 21; i < 109; i++) {
+        if (isBlack[i % 12] == 0) {
+          const thisX = border + wIndex * (whiteKeyWidth + whiteKeySpace);
+          const thisY = keyAreaY;
+          if (mx >= thisX && mx <= thisX + whiteKeyWidth && my >= thisY && my <= thisY + keyAreaHeight) {
+            mousePressedKey = i;
+            noteOn(i, 100);
+            playNoteSample(i, false);
+            return;
+          }
+          wIndex++;
+        }
+      }
+    }
+  };
+
+  p.mouseReleased = function () {
+    if (mousePressedKey !== null) {
+      noteOff(mousePressedKey, 0);
+      mousePressedKey = null;
+    }
+  };
 
   p.mouseClicked = function () {
     // Save the canvas content as an image file
@@ -809,8 +868,6 @@ const sketch = function (p: any) {
         const thisX = border + (wIndex - 1) * (whiteKeyWidth + whiteKeySpace) + isBlack[i % 12];
         const thisY = keyTop;
         if (mx >= thisX && mx <= thisX + blackKeyWidth && my >= thisY && my <= thisY + blackKeyHeight) {
-          // black key clicked
-          playNoteSample(i);
           return;
         }
       }
@@ -822,7 +879,6 @@ const sketch = function (p: any) {
           const thisX = border + wIndex * (whiteKeyWidth + whiteKeySpace);
           const thisY = keyAreaY;
           if (mx >= thisX && mx <= thisX + whiteKeyWidth && my >= thisY && my <= thisY + keyAreaHeight) {
-            playNoteSample(i);
             return;
           }
           wIndex++;
