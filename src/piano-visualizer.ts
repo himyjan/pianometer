@@ -51,6 +51,10 @@ let totalIntensityScore: number = 0;
 let notePressedCount: number = 0;
 let notePressedCountHistory: number[] = [];
 
+// for long press visualization
+let keyPressedFrames: number[] = []; // tracks how many frames each key has been pressed (0 = not pressed)
+let releasedTiles: any[] = []; // tracks released notes that continue to slide upward
+
 
 const sketch = function (p: p5) {
   WebMidi.enable().then(() => { // enable WebMidi (promise-based)
@@ -81,7 +85,6 @@ const sketch = function (p: p5) {
             noteOff(num, e.velocity);
           } else {
             noteOn(num, e.velocity);
-            try { spawnTile(num); } catch (err) { console.warn('spawnTile error', err); }
           }
         });
         input.addListener('noteoff', 'all', function (e) {
@@ -147,12 +150,35 @@ const sketch = function (p: p5) {
     if (nowPedaling) {
       isPedaled[pitch] = 1;
     }
+    // initialize key press counter (0 means just pressed)
+    keyPressedFrames[pitch] = 0;
     // spawn VFX tile for this note
     spawnTile(pitch);
   }
 
   function noteOff(pitch: number, velocity: number) {
     isKeyOn[pitch] = 0;
+    // when releasing a key, create a released tile that slides upward
+    if ((keyPressedFrames[pitch] ?? 0) > 0) {
+      const cx = getKeyCenterX(pitch);
+      if (cx != null) {
+        const pressedFrames = keyPressedFrames[pitch] ?? 0;
+        const rectHeight = Math.min(pressedFrames * 2, tileAreaBottom - tileAreaTop);
+        const hue = (pitch - 21) * 3 % 360;
+        releasedTiles.push({
+          x: cx,
+          y: tileAreaBottom - rectHeight,
+          w: 28,
+          h: rectHeight,
+          vy: 3,
+          hue,
+          alpha: 80,
+          pitch
+        });
+      }
+    }
+    // reset key press counter when released
+    keyPressedFrames[pitch] = 0;
   }
 
   function controllerChange(number: number, value: number) {
@@ -224,6 +250,14 @@ const sketch = function (p: p5) {
 
   p.draw = function () {
     p.background(0, 0, 20, 100);
+
+    // update key press frame counters
+    for (let i = 0; i < 128; i++) {
+      if (isKeyOn[i] === 1) {
+        keyPressedFrames[i] = (keyPressedFrames[i] ?? 0) + 1;
+      }
+    }
+
     pushHistories();
     drawWhiteKeys();
     drawBlackKeys();
@@ -252,6 +286,7 @@ const sketch = function (p: p5) {
     for (let i = 0; i < 128; i++) {
       isKeyOn[i] = 0;
       isPedaled[i] = 0;
+      keyPressedFrames[i] = 0;
     }
   }
 
@@ -474,9 +509,9 @@ const sketch = function (p: p5) {
     if (cx == null) return;
     // compute bottom of tile area (just above keys)
     tileAreaBottom = keyAreaY - 2;
-    const hue = (midiNumber - 21) * 3 % 360;
-    // spawn at bottom of tile area
-    tiles.push({ x: cx, y: tileAreaBottom, w: 28, h: 16, vy: 1 + Math.random() * 2, life: 80, hue, alpha: 100 });
+    // Disabled short burst tiles - only long press rectangles are shown
+    // const hue = (midiNumber - 21) * 3 % 360;
+    // tiles.push({ x: cx, y: tileAreaBottom, w: 28, h: 16, vy: 2, life: 80, hue, alpha: 100 });
   }
 
   function getKeyCenterX(n: number) {
@@ -507,13 +542,68 @@ const sketch = function (p: p5) {
     p.rect(0, tileAreaTop, p.width, tileAreaBottom - tileAreaTop);
     p.pop();
 
-    // update and draw tiles (from bottom to top)
+    // Draw long press rectangles (bottom fixed, extending upward while key is pressed)
+    for (let i = 21; i < 109; i++) {
+      if (isKeyOn[i] === 1 && (keyPressedFrames[i] ?? 0) > 0) {
+        const pressedFrames = keyPressedFrames[i] ?? 0;
+        const cx = getKeyCenterX(i);
+        if (cx == null) continue;
+
+        // calculate height based on pressed frames (each frame adds 2 pixels)
+        const rectHeight = Math.min(pressedFrames * 2, tileAreaBottom - tileAreaTop);
+
+        // rectangle fixed at bottom, extending upward
+        const rectTop = Math.max(tileAreaTop, tileAreaBottom - rectHeight);
+        const rectWidth = 28;
+
+        // determine color
+        let hue = (i - 21) * 3 % 360;
+        let alpha = 80;
+
+        if (rainbowMode) {
+          p.fill(hue, 90, 90, alpha);
+        } else {
+          p.fill(keyOnColor);
+        }
+
+        p.stroke(0, 0, 0, 30);
+        p.strokeWeight(1);
+        p.rect(cx - rectWidth / 2, rectTop, rectWidth, rectHeight, 3);
+      }
+    }
+
+    // Draw released tiles that slide upward (fixed height, moving up)
+    for (let i = releasedTiles.length - 1; i >= 0; i--) {
+      const rt = releasedTiles[i];
+      // update: move upward
+      rt.y -= rt.vy;
+
+      // determine color and draw
+      p.push();
+      p.noStroke();
+      if (rainbowMode) {
+        p.fill(rt.hue, 90, 90, rt.alpha);
+      } else {
+        p.fill(keyOnColor);
+      }
+      p.stroke(0, 0, 0, 30);
+      p.strokeWeight(1);
+      p.rect(rt.x - rt.w / 2, rt.y, rt.w, rt.h, 3);
+      p.pop();
+
+      // remove when past top of tile area
+      if (rt.y + rt.h < tileAreaTop) {
+        releasedTiles.splice(i, 1);
+      }
+    }
+
+    // update and draw tiles (from bottom to top) - short burst animations
     for (let i = tiles.length - 1; i >= 0; i--) {
       const t = tiles[i];
       // update: move upward
       t.y -= t.vy;
-      // horizontal jitter
-      t.x += Math.sin((t.y + i) / 12) * 0.8;
+      // // horizontal jitter
+      // t.x += Math.sin((t.y + i) / 12) * 0.8;
       // fade
       t.life -= 1;
       t.alpha = p.map(t.life, 0, 80, 0, 100);
