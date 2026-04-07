@@ -630,6 +630,10 @@ const sketch = function (p: any) {
     return `${name}${octave}`;
   }
 
+  function getRainbowHue(midiNumber: number) {
+    return p.map(midiNumber, 21, 108, 0, 1080) % 360;
+  }
+
   function playNoteSample(n: number, spawn: boolean = true) {
     const noteName = midiToNoteName(n);
     const path = `${soundFontBase}${noteName}.mp3`;
@@ -654,7 +658,7 @@ const sketch = function (p: any) {
     if (cx == null) return;
     // compute bottom of tile area (just above keys)
     tileAreaBottom = keyAreaY - 2;
-    const hue = (midiNumber - 21) * 3 % 360;
+    const hue = getRainbowHue(midiNumber);
     tiles.push({
       x: cx,
       y: tileAreaBottom,
@@ -664,7 +668,7 @@ const sketch = function (p: any) {
       life: 80,
       hue,
       alpha: 100,
-      keyColor: rainbowMode ? hue : null
+      keyColor: hue
     });
   }
 
@@ -711,7 +715,7 @@ const sketch = function (p: any) {
         const rectWidth = 28;
 
         // determine color
-        let hue = (i - 21) * 3 % 360;
+        let hue = getRainbowHue(i);
         let alpha = 80;
 
         if (rainbowMode) {
@@ -735,8 +739,9 @@ const sketch = function (p: any) {
       // determine color and draw
       p.push();
       p.noStroke();
+      const releasedHue = p.map(rt.pitch, 21, 108, 0, 1080) % 360;
       if (rainbowMode) {
-        p.fill(rt.hue, 90, 90, rt.alpha);
+        p.fill(releasedHue, 90, 90, rt.alpha);
       } else {
         p.fill(keyOnColor);
       }
@@ -765,7 +770,7 @@ const sketch = function (p: any) {
       // draw glow tile
       p.push();
       p.noStroke();
-      const tileHue = rainbowMode && typeof t.keyColor === 'number' ? t.keyColor : t.hue;
+      const tileHue = rainbowMode ? (typeof t.keyColor === 'number' ? t.keyColor : t.hue) : t.hue;
       p.fill(tileHue, 90, 90, t.alpha);
       // slight blur effect by drawing multiple rects with increasing size and lower alpha
       p.rect(t.x - t.w / 2, t.y - t.h / 2, t.w, t.h, 4);
