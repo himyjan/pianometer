@@ -33,8 +33,9 @@ let keyAreaY: number = 3; // 白鍵從 Y 軸座標多少開始？(default: 3)
 let keyAreaHeight: number = 70; // 白鍵多高？(default: 70)
 let rainbowMode: boolean = false; // 彩虹模式 (default: false)
 let displayNoteNames: boolean = false; // 白鍵要不要顯示音名 (default: false)
-let cc64now: number = 0; // 現在的踏板狀態
-let cc67now: number = 0;
+let cc64now: number = 0; // 現在的右踏板狀態(0 ～ 1)
+let cc66now: number = 0; // 現在的中踏板狀態(0 ～ 1)
+let cc67now: number = 0; // 現在的左踏板狀態(0 ～ 1)
 
 let sessionStartTime: Date = new Date();
 
@@ -192,15 +193,18 @@ const sketch = function (p: any) {
           if (e.velocity === 0) {
             noteOff(num, e.velocity);
           } else {
+            console.log("Received 'noteon' message (" + e.note.number + ", " + e.velocity + ").");
             noteOn(num, e.velocity);
           }
         });
         (input as any).addListener('noteoff', 'all', function (e: any) {
           const num = e.note && typeof e.note.number === 'number' ? e.note.number : (e.noteNumber ?? null);
           if (num === null) return;
+          console.log("Received 'noteoff' message (" + e.note.number + ", " + e.velocity + ").");
           noteOff(num, e.velocity);
         });
         (input as any).addListener('controlchange', 'all', function (e: any) {
+          console.log("Received control change message:", e.controller.number, e.value);
           controllerChange(e.controller.number, e.value);
         });
         inputsWithListeners.add(input.name);
@@ -328,6 +332,10 @@ const sketch = function (p: any) {
           isPedaled[i] = 0;
         }
       }
+    }
+
+    if (number == 66) {
+      cc66now = value;
     }
 
     if (number == 67) {
@@ -507,8 +515,8 @@ const sketch = function (p: any) {
     p.text(timeText, 5, statsY);
 
     // PEDAL
-    let pedalText = "PEDALS" + "\nL " + convertNumberToBars(cc67now) + "  R " + convertNumberToBars(cc64now)
-    p.text(pedalText, 860, statsY);
+    let pedalText = "PEDALS" + "\nL " + convertNumberToBars(cc67now) + "  M " + convertNumberToBars(cc66now) + "  R " + convertNumberToBars(cc64now)
+    p.text(pedalText, 750, statsY);
 
     // NOTES
     let notesText = "NOTE COUNT" + "\n" + totalNotesPlayed;
@@ -550,12 +558,12 @@ const sketch = function (p: any) {
   }
 
   function convertNumberToBars(number: number) {
-    if (number < 0 || number > 127) {
-      throw new Error('Number must be between 0 and 127');
+    if (number < 0 || number > 1) {
+      throw new Error('Number must be between 0 and 1');
     }
 
     const maxBars = 10;
-    const scaleFactor = 128 / maxBars;
+    const scaleFactor = 1 / maxBars;
 
     // Calculate the number of bars
     const numberOfBars = Math.ceil(number / scaleFactor);
